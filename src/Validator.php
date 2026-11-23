@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace ListingTool;
 
+use ListingTool\Exporters\Amazon\AmazonMapper;
+
 /**
  * Checks master rows against each channel's rules.
  * Each issue: ['sku', 'row' (1-based data row), 'channel' (null = all), 'field', 'level' (error|warning), 'message'].
@@ -21,12 +23,12 @@ final class Validator
     ];
 
     /** Extra fields Amazon and Flipkart ask for on clothing. */
-    private const APPAREL_REQUIRED = ['color', 'size', 'material', 'target_gender'];
-    private const APPAREL_RECOMMENDED = ['attr:fit_type', 'attr:sleeve_type', 'attr:neck_type', 'pattern', 'attr:care_instructions'];
+    private const APPAREL_REQUIRED = ['color', 'size', 'material', 'target_gender', 'age_group'];
+    private const APPAREL_RECOMMENDED = ['attr:fit_type', 'attr:sleeve_type', 'attr:neck_type', 'pattern', 'attr:care_instructions', 'attr:closure_type'];
 
     public static function isApparel(array $row): bool
     {
-        return preg_match('/cloth|apparel|shirt|t-shirt|tee|kurta|kurti|dress|jeans|trouser|saree|top|shorts|jacket|hoodie|legging/i',
+        return preg_match('/cloth|apparel|shirt|t-shirt|tee|kurta|kurti|dress|jeans|trouser|saree|top|shorts|jacket|hoodie|legging|romper|onesie|jhabla|night ?suit|sleep|pajama|pyjama|frock/i',
             $row['category_path'] . ' ' . $row['product_type']) === 1;
     }
 
@@ -89,6 +91,13 @@ final class Validator
             }
 
             $apparel = self::isApparel($s);
+            // Apparel GST after the Sept 2025 revision, as we understand it: 5% up to ₹2,500 a piece, 18% above.
+            if ($apparel && is_numeric($s['selling_price_inr']) && is_numeric($s['gst_rate_pct'])) {
+                $expected = (float) $s['selling_price_inr'] <= 2500 ? 5 : 18;
+                if ((float) $s['gst_rate_pct'] !== (float) $expected) {
+                    $add($i, $s, null, 'gst_rate_pct', 'warning', "Clothing at ₹{$s['selling_price_inr']} is usually taxed at {$expected}% GST, not {$s['gst_rate_pct']}%. Check with your tax advisor.");
+                }
+            }
             foreach ($channels as $ch) {
                 if (!Catalog::wantsChannel($s, $ch)) {
                     continue;
@@ -110,8 +119,16 @@ final class Validator
                         }
                     }
                 }
-                if ($ch === 'amazon' && $s['gtin'] === '') {
+                if ($ch === 'amazon' && $apparel) {
+                    $kind = $s['parent_sku'] !== '' ? 'child' : 'simple';
+                    foreach (AmazonMapper::map($s, $kind)['problems'] as $p) {
+                        $add($i, $s, $ch, $p['field'], $p['level'], $p['message']);
+                    }
+                } elseif ($ch === 'amazon' && $s['gtin'] === '') {
                     $add($i, $s, $ch, 'gtin', 'warning', 'No GTIN. Amazon needs one unless your brand has a GTIN exemption.');
+                }
+                if ($ch === 'flipkart' && $apparel && AmazonMapper::isBaby($s) && $s['size'] !== '' && AmazonMapper::ageSize($s['size']) === null) {
+                    $add($i, $s, $ch, 'size', 'error', "Baby sizes must be ages, such as \"0-3 Months\" or \"1-2 Years\". Got \"{$s['size']}\".");
                 }
                 if ($ch === 'amazon' && mb_strlen($s['title']) > 200) {
                     $add($i, $s, $ch, 'title', 'warning', 'Amazon usually suppresses titles over 200 characters.');

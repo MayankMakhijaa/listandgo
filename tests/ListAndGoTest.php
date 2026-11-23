@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ListingTool\Tests;
 
 use ListingTool\Csv;
+use ListingTool\Exporters\Amazon\AmazonMapper;
 use ListingTool\ListAndGo;
 use ListingTool\Loader;
 use ListingTool\Validator;
@@ -43,12 +44,23 @@ final class ListAndGoTest extends TestCase
         $this->assertSame(['errors' => 0, 'warnings' => 0], $result['summary'], json_encode($result['issues']));
     }
 
+    /** Read the Amazon export back as rows keyed by short attribute key (row 5), data from row 7. */
+    private static function amazonRows(string $content): array
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'lag') . '.xlsx';
+        file_put_contents($tmp, $content);
+        $all = IOFactory::load($tmp)->getSheetByName('Template')->toArray(null, false, false);
+        unlink($tmp);
+        $keys = array_map(static fn ($k) => AmazonMapper::shortKey((string) $k), $all[4]);
+        return array_map(static fn ($r) => array_combine($keys, array_map('strval', $r)), array_slice($all, 6));
+    }
+
     public function testValidatorCatchesPriceAboveMrpBadHsnAndDuplicateSku(): void
     {
         $rows = self::master();
-        $rows[0]['selling_price_inr'] = '700';
-        $rows[0]['hsn_code'] = '69A2';
-        $rows[3]['sku'] = $rows[2]['sku'];
+        $rows[3]['selling_price_inr'] = '900';
+        $rows[3]['hsn_code'] = '61A1';
+        $rows[2]['sku'] = $rows[1]['sku'];
         $fields = array_column(Validator::validate($rows), 'field');
         $this->assertContains('selling_price_inr', $fields);
         $this->assertContains('hsn_code', $fields);
@@ -58,35 +70,93 @@ final class ListAndGoTest extends TestCase
     public function testClothingNeedsSizeAndColourOnMarketplacesOnly(): void
     {
         $rows = self::master();
-        $rows[2]['size'] = '';
+        $rows[1]['size'] = '';
         $issues = array_filter(Validator::validate($rows), static fn ($i) => $i['field'] === 'size' && $i['level'] === 'error');
         $this->assertEqualsCanonicalizing(['amazon', 'flipkart'], array_values(array_unique(array_column($issues, 'channel'))));
+    }
+
+    public function testBabySizesMustBeAges(): void
+    {
+        $rows = self::master();
+        $rows[1]['size'] = 'M';
+        $issues = array_filter(Validator::validate($rows), static fn ($i) => $i['field'] === 'size' && $i['level'] === 'error');
+        $this->assertEqualsCanonicalizing(['amazon', 'flipkart'], array_column($issues, 'channel'));
+    }
+
+    public function testApparelGstWarningAbovePriceBand(): void
+    {
+        $rows = self::master();
+        $rows[3]['mrp_inr'] = '3500';
+        $rows[3]['selling_price_inr'] = '3000';
+        $gst = array_filter(Validator::validate($rows), static fn ($i) => $i['field'] === 'gst_rate_pct');
+        $this->assertCount(1, $gst);
+        $this->assertStringContainsString('18%', array_values($gst)[0]['message']);
+    }
+
+    public function testAgeSizeParsing(): void
+    {
+        $this->assertSame(['class' => 'Age', 'from' => '0 Months', 'to' => '3 Months'], AmazonMapper::ageSize('0-3 Months'));
+        $this->assertSame(['class' => 'Age', 'from' => '6 Months', 'to' => '12 Months'], AmazonMapper::ageSize('6-12M'));
+        $this->assertSame(['class' => 'Age', 'from' => '1 Years', 'to' => '2 Years'], AmazonMapper::ageSize('1-2 Yrs'));
+        $this->assertSame(['class' => 'Age', 'from' => 'Newborn', 'to' => ''], AmazonMapper::ageSize('NB'));
+        $this->assertNull(AmazonMapper::ageSize('XL'));
     }
 
     public function testChannelFlagSkipsRows(): void
     {
         $rows = self::master();
-        $rows[0]['list_on_flipkart'] = 'N';
+        $rows[3]['list_on_flipkart'] = 'N';
         $file = ListAndGo::export($rows, 'flipkart');
-        $this->assertNotContains('MUG-CER-350-WHT', array_column(self::sheetRows($file->content), 'Seller SKU ID'));
+        $this->assertNotContains('LL-NS-PNK-6-12M', array_column(self::sheetRows($file->content), 'Seller SKU ID'));
     }
 
-    public function testAmazonParentChildRows(): void
+    public function testAmazonExportMatchesTemplateColumns(): void
     {
-        $out = self::sheetRows(ListAndGo::export(self::master(), 'amazon')->content);
-        $bySku = array_column($out, null, 'item_sku');
-        $this->assertSame('parent', $bySku['TSH-CTN-CREW']['parent_child']);
-        $this->assertSame('', $bySku['TSH-CTN-CREW']['standard_price']);
-        $child = $bySku['TSH-CTN-CREW-BLK-M'];
-        $this->assertSame('child', $child['parent_child']);
-        $this->assertSame('TSH-CTN-CREW', $child['parent_sku']);
-        $this->assertSame('SizeColor', $child['variation_theme']);
-        $this->assertSame('499', $child['standard_price']);
-        $this->assertSame('799', $child['maximum_retail_price']);
-        $this->assertSame('8909876543210', $child['external_product_id']);
-        $this->assertSame('Men', $child['department_name']);
-        $this->assertSame('Half Sleeve', $child['sleeve_type']);
-        $this->assertSame('100% combed cotton, 180 GSM', $child['bullet_point1']);
+        $schema = AmazonMapper::schema();
+        $tmp = tempnam(sys_get_temp_dir(), 'lag') . '.xlsx';
+        file_put_contents($tmp, ListAndGo::export(self::master(), 'amazon')->content);
+        $sheet = IOFactory::load($tmp)->getSheetByName('Template');
+        unlink($tmp);
+        $this->assertSame(array_column($schema['columns'], 'key'), $sheet->rangeToArray('A5:' . $sheet->getHighestColumn() . '5')[0]);
+        $this->assertSame('SKU', $sheet->getCell('A4')->getValue());
+    }
+
+    public function testAmazonBabyParentAndChildRows(): void
+    {
+        $bySku = array_column(self::amazonRows(ListAndGo::export(self::master(), 'amazon')->content), null, 'contribution_sku#1.value');
+        $parent = $bySku['LL-TEE-HS'];
+        $this->assertSame('Parent', $parent['parentage_level#1.value']);
+        $this->assertSame('SHIRT', $parent['product_type#1.value']);
+        $this->assertSame('SIZE/COLOR', $parent['variation_theme#1.name']);
+        $this->assertSame('', $parent['purchasable_offer[audience=ALL]#1.our_price#1.schedule#1.value_with_tax']);
+
+        $child = $bySku['LL-TEE-HS-BLU-0-3M'];
+        $this->assertSame('Child', $child['parentage_level#1.value']);
+        $this->assertSame('LL-TEE-HS', $child['child_parent_sku_relationship#1.parent_sku']);
+        $this->assertSame('Baby Boys', $child['department#1.value']);
+        $this->assertSame('Male', $child['target_gender#1.value']);
+        $this->assertSame('Baby', $child['age_range_description#1.value']);
+        $this->assertSame('Age', $child['shirt_size#1.size_class']);
+        $this->assertSame('0 Months', $child['shirt_size#1.size']);
+        $this->assertSame('3 Months', $child['shirt_size#1.size_to']);
+        $this->assertSame('Blue', $child['color#1.standardized_values#1']);
+        $this->assertSame('Sky Blue', $child['color#1.value']);
+        $this->assertSame('Crew Neck', $child['neck#1.neck_style#1.value']);
+        $this->assertSame('Baby/Infant', $child['compliance_age_range#1.value']);
+        $this->assertSame('HSN Code', $child['external_product_information#1.entity']);
+        $this->assertSame('6111', $child['external_product_information#1.value']);
+        $this->assertSame('A_GEN_SUPERREDUCED', $child['product_tax_code#1.value']);
+        $this->assertSame('349', $child['purchasable_offer[audience=ALL]#1.our_price#1.schedule#1.value_with_tax']);
+        $this->assertSame('499', $child['purchasable_offer[audience=ALL]#1.maximum_retail_price#1.schedule#1.value_with_tax']);
+        $this->assertSame('EAN', $child['amzn1.volt.ca.product_id_type']);
+        $this->assertSame('Centimeters', $child['item_package_dimensions#1.length.unit']);
+
+        $nightSuit = $bySku['LL-NS-PNK-6-12M'];
+        $this->assertSame('NIGHTGOWN_NIGHTSHIRT', $nightSuit['product_type#1.value']);
+        $this->assertSame('Baby Girls', $nightSuit['department#1.value']);
+        $this->assertSame('6 Months', $nightSuit['apparel_size#1.size']);
+        $this->assertSame('Pajama Set', $nightSuit['item_type_name#1.value']);
+        $this->assertSame('', $nightSuit['parentage_level#1.value']);
     }
 
     public function testFlipkartRowsShareStyleCodeAndConvertUnits(): void
@@ -94,40 +164,44 @@ final class ListAndGoTest extends TestCase
         $out = self::sheetRows(ListAndGo::export(self::master(), 'flipkart')->content);
         $this->assertCount(3, $out, 'variant parent rows are not listed on Flipkart');
         $bySku = array_column($out, null, 'Seller SKU ID');
-        $m = $bySku['TSH-CTN-CREW-BLK-M'];
-        $this->assertSame('TSH-CTN-CREW', $m['Style Code']);
-        $this->assertSame("Men's Cotton Crew Neck T-Shirt", $m['Model Name']);
-        $this->assertSame('0.25', $m['Weight (KG)']);
+        $m = $bySku['LL-TEE-HS-BLU-0-3M'];
+        $this->assertSame('LL-TEE-HS', $m['Style Code']);
+        $this->assertSame('LittleLeaf Baby Boys Cotton Half Sleeve T-Shirt', $m['Model Name']);
+        $this->assertSame('0.09', $m['Weight (KG)']);
         $this->assertSame('GST_5', $m['Tax Code']);
-        $this->assertSame('Men', $m['Ideal For']);
+        $this->assertSame('Baby Boys', $m['Ideal For']);
+        $this->assertSame('0-3 Months', $m['Size']);
         $this->assertSame('Round Neck', $m['Neck']);
-        $this->assertSame('UrbanThread Apparel LLP, 45 Avinashi Rd, Tiruppur, TN 641602', $m['Manufacturer Details']);
+        $this->assertSame('LittleLeaf Kids Pvt Ltd, 12 Kumaran Rd, Tiruppur, TN 641601', $m['Manufacturer Details']);
+        $this->assertSame('Baby Girls', $bySku['LL-NS-PNK-6-12M']['Ideal For']);
     }
 
     public function testShopifyGroupsVariantsAndImagesUnderOneHandle(): void
     {
         $out = Csv::read(ListAndGo::export(self::master(), 'shopify')->content);
-        $tee = array_values(array_filter($out, static fn ($r) => $r['Handle'] === 'tsh-ctn-crew'));
+        $tee = array_values(array_filter($out, static fn ($r) => $r['Handle'] === 'll-tee-hs'));
         $this->assertCount(2, $tee);
         $this->assertSame('Color', $tee[0]['Option1 Name']);
         $this->assertSame('Size', $tee[0]['Option2 Name']);
-        $this->assertSame(['M', 'L'], array_column($tee, 'Option2 Value'));
+        $this->assertSame(['0-3 Months', '3-6 Months'], array_column($tee, 'Option2 Value'));
         $this->assertSame('', $tee[1]['Title'], 'only the first line of a product carries the title');
-        $mug = array_values(array_filter($out, static fn ($r) => $r['Handle'] === 'mug-cer-350-wht'));
-        $this->assertSame(['1', '2', '3'], array_column($mug, 'Image Position'));
-        $this->assertSame('IN', $mug[0]['Country of Origin']);
+        $this->assertSame(['1', '2'], array_column($tee, 'Image Position'));
+        $ns = array_values(array_filter($out, static fn ($r) => $r['Handle'] === 'll-ns-pnk-6-12m'));
+        $this->assertSame('IN', $ns[0]['Country of Origin']);
+        $this->assertSame('Default Title', $ns[0]['Option1 Value']);
     }
 
     public function testWooCommerceVariableProduct(): void
     {
         $out = Csv::read(ListAndGo::export(self::master(), 'woocommerce')->content);
         $bySku = array_column($out, null, 'SKU');
-        $this->assertSame('variable', $bySku['TSH-CTN-CREW']['Type']);
-        $this->assertSame('M, L', $bySku['TSH-CTN-CREW']['Attribute 2 value(s)']);
-        $this->assertSame('variation', $bySku['TSH-CTN-CREW-BLK-L']['Type']);
-        $this->assertSame('TSH-CTN-CREW', $bySku['TSH-CTN-CREW-BLK-L']['Parent']);
-        $this->assertSame('799', $bySku['TSH-CTN-CREW-BLK-L']['Regular price']);
-        $this->assertSame('499', $bySku['TSH-CTN-CREW-BLK-L']['Sale price']);
+        $this->assertSame('variable', $bySku['LL-TEE-HS']['Type']);
+        $this->assertSame('0-3 Months, 3-6 Months', $bySku['LL-TEE-HS']['Attribute 2 value(s)']);
+        $this->assertSame('variation', $bySku['LL-TEE-HS-BLU-3-6M']['Type']);
+        $this->assertSame('LL-TEE-HS', $bySku['LL-TEE-HS-BLU-3-6M']['Parent']);
+        $this->assertSame('499', $bySku['LL-TEE-HS-BLU-3-6M']['Regular price']);
+        $this->assertSame('349', $bySku['LL-TEE-HS-BLU-3-6M']['Sale price']);
+        $this->assertSame('simple', $bySku['LL-NS-PNK-6-12M']['Type']);
     }
 
     public function testImportsShopifyExport(): void
@@ -161,6 +235,7 @@ final class ListAndGoTest extends TestCase
         $result = ListAndGo::check(self::fixture('shopify_export.csv'), ['amazon']);
         $fields = array_unique(array_column(array_filter($result['issues'], static fn ($i) => $i['level'] === 'error'), 'field'));
         $this->assertContains('hsn_code', $fields);
+        $this->assertContains('age_group', $fields);
         $this->assertContains('gst_rate_pct', $fields);
         $this->assertContains('country_of_origin', $fields);
     }

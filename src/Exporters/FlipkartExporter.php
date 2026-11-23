@@ -30,8 +30,12 @@ final class FlipkartExporter
     public static function idealFor(string $gender, string $age): string
     {
         $g = strtolower($gender);
-        $kid = preg_match('/kid|child|infant|baby|toddler/i', $age) === 1;
+        $baby = preg_match('/infant|baby|newborn|toddler/i', $age) === 1;
+        $kid = preg_match('/kid|child/i', $age) === 1;
         return match (true) {
+            $baby && in_array($g, ['men', 'male', 'boys'], true) => 'Baby Boys',
+            $baby && in_array($g, ['women', 'female', 'girls'], true) => 'Baby Girls',
+            $baby => 'Baby Boys & Baby Girls',
             $kid && in_array($g, ['men', 'male', 'boys'], true) => 'Boys',
             $kid && in_array($g, ['women', 'female', 'girls'], true) => 'Girls',
             $kid => 'Boys & Girls',
