@@ -1,0 +1,4 @@
+ID,Type,SKU,Name,Published,Short description,Description,Stock,Weight (kg),Length (cm),Width (cm),Height (cm),Sale price,Regular price,Categories,Tags,Images,Parent,Attribute 1 name,Attribute 1 value(s),Brands
+11,variable,POLO-01,Men's Polo T-Shirt,1,Pique cotton polo,<p>Classic polo.</p>,,,,,,,,"Clothing > Men > T-Shirts",polo,"https://cdn.example.com/polo.jpg, https://cdn.example.com/polo-2.jpg",,Size,"M, L",Saanjh
+12,variation,POLO-01-M,Men's Polo T-Shirt - M,1,,,15,0.3,30,24,3,699,999,,,https://cdn.example.com/polo-m.jpg,id:11,Size,M,
+13,variation,POLO-01-L,Men's Polo T-Shirt - L,1,,,0,0.32,30,24,3,,999,,,,id:11,Size,L,

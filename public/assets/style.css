@@ -1,0 +1,35 @@
+:root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1d2433; --muted: #5b6475; --line: #dde1e8;
+    --accent: #0b6bcb; --accent-ink: #ffffff; --error: #b42318; --error-bg: #fef3f2; --warn: #8a5a00; --warn-bg: #fff8e6;
+}
+@media (prefers-color-scheme: dark) {
+    :root { --bg: #11151c; --card: #1a202a; --ink: #e8ecf2; --muted: #9aa4b5; --line: #2c3442;
+        --accent: #4d9cf0; --accent-ink: #0b1220; --error: #ff8a80; --error-bg: #3a1d1b; --warn: #f5c35b; --warn-bg: #352a12; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 920px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { margin: 0 0 4px; font-size: 28px; }
+h2 { margin: 0 0 8px; font-size: 19px; }
+h3 { margin: 24px 0 8px; font-size: 16px; }
+.lead, .hint { color: var(--muted); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-top: 16px; }
+.links a { margin-right: 16px; color: var(--accent); }
+form { display: grid; gap: 16px; }
+.file span, legend { display: block; font-weight: 600; margin-bottom: 6px; }
+fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.check { display: inline-flex; gap: 6px; align-items: center; }
+button, .download { display: inline-block; background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px;
+    padding: 10px 16px; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
+button { justify-self: start; }
+.downloads { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.download.disabled { background: var(--error-bg); color: var(--error); cursor: not-allowed; }
+.alert.error { background: var(--error-bg); color: var(--error); padding: 10px 12px; border-radius: 8px; margin: 16px 0 0; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+.tag { font-size: 12px; font-weight: 700; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; }
+tr.error .tag { background: var(--error-bg); color: var(--error); }
+tr.warning .tag { background: var(--warn-bg); color: var(--warn); }
+code { font-size: 13px; }
