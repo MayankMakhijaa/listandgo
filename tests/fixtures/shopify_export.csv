@@ -1,0 +1,5 @@
+Handle,Title,Body (HTML),Vendor,Product Category,Type,Tags,Published,Option1 Name,Option1 Value,Option2 Name,Option2 Value,Variant SKU,Variant Grams,Variant Inventory Qty,Variant Price,Variant Compare At Price,Variant Barcode,Image Src,Image Position,SEO Title,Status
+linen-kurta,Women's Linen Kurta,<p>Breathable linen.</p>,Saanjh,Apparel & Accessories > Clothing,Kurta,"women,kurta",TRUE,Size,S,Color,Blue,KUR-LIN-S-BLU,220,10,1299,1999,8901111111111,https://cdn.example.com/kurta-1.jpg,1,Linen Kurta,active
+linen-kurta,,,,,,,,,M,,Blue,KUR-LIN-M-BLU,230,8,1299,1999,8901111111128,https://cdn.example.com/kurta-2.jpg,2,,
+linen-kurta,,,,,,,,,,,,,,,,,,https://cdn.example.com/kurta-3.jpg,3,,
+plain-cap,Cotton Cap,<p>One size.</p>,Saanjh,,Cap,caps,TRUE,Title,Default Title,,,CAP-001,90,25,399,,,https://cdn.example.com/cap.jpg,1,,active

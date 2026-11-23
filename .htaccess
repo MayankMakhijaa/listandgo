@@ -1,0 +1,7 @@
+# Hostinger / Apache: when the whole repo sits in public_html, serve only the public/ folder.
+Options -Indexes
+RewriteEngine On
+RewriteRule ^(src|vendor|storage|templates|tests)(/|$) - [F,L]
+RewriteRule ^(composer\.(json|lock)|README\.md|phpunit\.xml)$ - [F,L]
+RewriteCond %{REQUEST_URI} !^/public/
+RewriteRule ^(.*)$ public/$1 [L]
