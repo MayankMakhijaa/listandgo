@@ -28,7 +28,7 @@ Live API publishing to the marketplaces is planned for phase 2.
 Get the templates from `templates/`, or from the links on the upload page:
 
 - `listing_template_blank.csv`: headers only.
-- `listing_template_sample.csv`: a simple product (a mug) and a t-shirt with two sizes.
+- `listing_template_sample.csv`: baby products: a t-shirt in two sizes (0-3 and 3-6 Months) and a night suit.
 
 The file has one row per SKU.
 
